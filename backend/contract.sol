@@ -263,6 +263,46 @@ contract HashBack {
         if (!sent) revert TransferFailed();
     }
 
+    function getRewardCount() external view returns (uint256) {
+        return rewardIds.length;
+    }
+
+    function getRewardIdAt(uint256 index) external view returns (bytes32) {
+        require(index < rewardIds.length, "Reward index out of range");
+        return rewardIds[index];
+    }
+
+    function getReward(bytes32 id)
+        external
+        view
+        returns (bytes32 rewardId, string memory name, uint256 cost, bool active)
+    {
+        Reward storage reward = rewards[id];
+        return (reward.id, reward.name, reward.cost, reward.active);
+    }
+
+    function getRedemption(uint256 id)
+        external
+        view
+        returns (
+            address customer,
+            bytes32 rewardId,
+            uint256 pointsSpent,
+            uint256 createdAt,
+            RedemptionStatus status
+        )
+    {
+        if (id >= redemptions.length) revert InvalidRedemption();
+        Redemption storage item = redemptions[id];
+        return (
+            item.customer,
+            item.rewardId,
+            item.pointsSpent,
+            item.createdAt,
+            item.status
+        );
+    }
+
     function _addReward(bytes32 id, string memory name, uint256 cost) private {
         require(id != bytes32(0), "Invalid reward ID");
         require(bytes(name).length > 0, "Reward name required");

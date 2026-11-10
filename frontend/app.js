@@ -1,581 +1,600 @@
-// HashBack DApp - Controlador Frontend com Alternância Dinâmica de Perfis (Emissor vs Receptor)
+// HashBack — frontend com MetaMask, Web3.js 4.x e contrato na Sepolia
 
-let accounts = [];
-let activeAccount = null;
+let web3 = null;
+let contract = null;
+let account = null;
+let role = { isOwner: false, isMerchant: false, isCustomer: false };
 let rewards = [];
-let chainData = [];
 
-// Elementos Globais DOM
-const accountPillsContainer = document.getElementById('account-pills');
-const activeRoleEl = document.getElementById('active-account-role');
-const metricsContainer = document.getElementById('metrics-container');
+const SEPOLIA_CHAIN_ID = 11155111;
+const SEPOLIA_CHAIN_HEX = "0xaa36a7";
+const config = window.HASHBACK_CONFIG;
 
-const operationsTitle = document.getElementById('operations-title');
-const segmentedTabsContainer = document.getElementById('segmented-tabs');
-const tabContentArea = document.getElementById('tab-content-area');
+const $ = (id) => document.getElementById(id);
 
-const cellRewards = document.getElementById('cell-rewards');
-const cellMerchantSummary = document.getElementById('cell-merchant-summary');
-const rewardsContainer = document.getElementById('rewards-container');
-const vouchersContainer = document.getElementById('vouchers-container');
+const accountPillsContainer = $("account-pills");
+const activeRoleEl = $("active-account-role");
+const metricsContainer = $("metrics-container");
+const operationsTitle = $("operations-title");
+const segmentedTabsContainer = $("segmented-tabs");
+const tabContentArea = $("tab-content-area");
+const cellRewards = $("cell-rewards");
+const cellMerchantSummary = $("cell-merchant-summary");
+const rewardsContainer = $("rewards-container");
+const vouchersContainer = $("vouchers-container");
+const timelineContainer = $("blockchain-timeline");
+const blocksCountEl = $("blocks-count");
+const feedbackBox = $("contract-feedback-box");
+const feedbackBadge = $("feedback-badge");
+const feedbackMsg = $("feedback-msg");
+const chainStatusText = $("chain-status-text");
 
-const timelineContainer = document.getElementById('blockchain-timeline');
-const blocksCountEl = document.getElementById('blocks-count');
+function shorten(value) {
+  if (!value) return "";
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
+}
 
-const feedbackBox = document.getElementById('contract-feedback-box');
-const feedbackBadge = document.getElementById('feedback-badge');
-const feedbackMsg = document.getElementById('feedback-msg');
+function safeText(value) {
+  return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+}
 
-function showFeedback(type, message) {
-  feedbackBox.style.display = 'flex';
+function showFeedback(type, message, txHash = null) {
+  if (!feedbackBox) return;
+
+  feedbackBox.style.display = "flex";
   feedbackBox.className = `terminal-feedback ${type}`;
-  feedbackBadge.textContent = type === 'success' ? 'CONFIRMADO' : 'REJEITADO';
-  feedbackMsg.textContent = message;
-}
 
-// Carregar Contas
-async function loadAccounts() {
-  try {
-    const res = await fetch('/api/demo-accounts');
-    accounts = await res.json();
-    renderAccountPills();
-  } catch (err) {
-    console.error('Erro ao carregar contas:', err);
-  }
-}
-
-function renderAccountPills() {
-  accountPillsContainer.innerHTML = '';
-  accounts.forEach((acc, idx) => {
-    const btn = document.createElement('button');
-    btn.className = `acc-pill ${activeAccount && activeAccount.key === acc.key ? 'active' : ''}`;
-    if (!activeAccount && idx === 0) {
-      activeAccount = acc;
-      btn.classList.add('active');
-    }
-    btn.textContent = acc.name;
-    btn.addEventListener('click', () => {
-      activeAccount = acc;
-      renderAccountPills();
-      renderActiveProfile();
-    });
-    accountPillsContainer.appendChild(btn);
-  });
-  renderActiveProfile();
-}
-
-// Renderiza a Interface com base no Perfil (EMISSOR vs RECEPTOR)
-function renderActiveProfile() {
-  if (!activeAccount) return;
-
-  const isMerchant = activeAccount.is_merchant;
-
-  // 1. Atualizar Título e Métricas do Topo
-  if (isMerchant) {
-    activeRoleEl.textContent = 'Loja Parceira (Canal Emissor)';
-    metricsContainer.innerHTML = `
-      <div class="metric-plate">
-        <span class="plate-label">Total de Pontos Emitidos</span>
-        <div class="plate-balance">
-          <span>${activeAccount.total_issued.toLocaleString('pt-BR')}</span>
-          <span class="token-ticker">HBC</span>
-        </div>
-      </div>
-      <div class="metric-plate">
-        <span class="plate-label">Clientes Beneficiados</span>
-        <div class="plate-balance" style="font-size:1.4rem;">
-          <span>${activeAccount.clients_count}</span>
-          <span class="token-ticker" style="color:var(--text-tertiary); font-size:0.75rem;">CLIENTES</span>
-        </div>
-      </div>
-      <div class="metric-plate address-plate">
-        <span class="plate-label">Endereço Público (0x)</span>
-        <div class="plate-mono">${activeAccount.address}</div>
-      </div>
-    `;
-
-    // Loja NÃO resgata pontos -> Esconder Catálogo e Mostrar Resumo do Emissor
-    cellRewards.style.display = 'none';
-    cellMerchantSummary.style.display = 'block';
-
-    // Renderizar Abas da Loja
-    operationsTitle.textContent = 'Painel da Loja Parceira';
-    segmentedTabsContainer.innerHTML = `
-      <button class="seg-btn active" data-tab="tab-mint">Emitir Pontos</button>
-      <button class="seg-btn" data-tab="tab-tests">Testes de Auditoria</button>
-    `;
-
-    // Renderizar Formulário de Emissão (Apenas para Clientes)
-    const clientOptions = accounts
-      .filter(a => !a.is_merchant)
-      .map(a => `<option value="${a.address}">${a.name} (${a.address.substring(0, 10)}...)</option>`)
-      .join('');
-
-    tabContentArea.innerHTML = `
-      <!-- Aba Emissão -->
-      <div class="tab-pane active" id="tab-mint">
-        <form id="form-mint" class="haptic-form">
-          <div class="input-bezel">
-            <label for="mint-recipient">Cliente Destinatário</label>
-            <select id="mint-recipient" class="haptic-select">${clientOptions}</select>
-          </div>
-          <div class="input-bezel">
-            <label for="mint-amount">Quantidade de Pontos (HBC)</label>
-            <input type="number" id="mint-amount" class="haptic-input" value="150" min="1" required>
-          </div>
-          <button type="submit" class="island-cta">
-            <span>Emitir Pontos & Criar Bloco</span>
-            <span class="cta-icon-bezel">→</span>
-          </button>
-        </form>
-      </div>
-
-      <!-- Aba Testes de Rejeição da Loja -->
-      <div class="tab-pane" id="tab-tests">
-        <div class="sandbox-actions">
-          <div class="sandbox-card">
-            <div class="sandbox-desc">
-              <strong>Simular Resgate de Recompensa pela Loja</strong>
-              <span>Comprova que o contrato impede a loja de resgatar prêmios do catálogo.</span>
-            </div>
-            <button class="island-btn island-btn-danger" id="btn-test-merchant-redeem">Executar Teste</button>
-          </div>
-        </div>
-      </div>
-    `;
-
-    setupMintForm();
-    setupMerchantTest();
-
+  if (type === "pending") {
+    feedbackBadge.textContent = "PENDENTE";
+  } else if (type === "success") {
+    feedbackBadge.textContent = "CONFIRMADO";
   } else {
-    // PERFIL: CLIENTE (Alice / Bob)
-    activeRoleEl.textContent = `Cliente (${activeAccount.name})`;
-    metricsContainer.innerHTML = `
-      <div class="metric-plate">
-        <span class="plate-label">Saldo de Pontos</span>
-        <div class="plate-balance">
-          <span>${activeAccount.balance.toLocaleString('pt-BR')}</span>
-          <span class="token-ticker">HBC</span>
-        </div>
-      </div>
-      <div class="metric-plate address-plate">
-        <span class="plate-label">Endereço Público (0x)</span>
-        <div class="plate-mono">${activeAccount.address}</div>
-      </div>
-      <div class="metric-plate nonce-plate">
-        <span class="plate-label">Nonce (Tx)</span>
-        <div class="plate-mono">${activeAccount.nonce}</div>
-      </div>
-    `;
-
-    // Cliente PODE resgatar recompensas -> Mostrar Catálogo e Esconder Painel da Loja
-    cellRewards.style.display = 'block';
-    cellMerchantSummary.style.display = 'none';
-
-    // Renderizar Abas do Cliente (Cliente NÃO EMITE pontos)
-    operationsTitle.textContent = 'Painel do Cliente';
-    segmentedTabsContainer.innerHTML = `
-      <button class="seg-btn active" data-tab="tab-transfer">Transferir Pontos</button>
-      <button class="seg-btn" data-tab="tab-tests">Testes de Rejeição</button>
-    `;
-
-    // Destinatários: Apenas outros clientes (Lojas NÃO podem receber)
-    const peerOptions = accounts
-      .filter(a => !a.is_merchant && a.key !== activeAccount.key)
-      .map(a => `<option value="${a.address}">${a.name} (${a.address.substring(0, 10)}...)</option>`)
-      .join('');
-
-    tabContentArea.innerHTML = `
-      <!-- Aba Transferência -->
-      <div class="tab-pane active" id="tab-transfer">
-        <form id="form-transfer" class="haptic-form">
-          <div class="input-bezel">
-            <label for="transfer-recipient">Outro Cliente</label>
-            <select id="transfer-recipient" class="haptic-select">${peerOptions}</select>
-          </div>
-          <div class="input-bezel">
-            <label for="transfer-amount">Quantidade de Pontos (HBC)</label>
-            <input type="number" id="transfer-amount" class="haptic-input" value="50" min="1" required>
-          </div>
-          <button type="submit" class="island-cta">
-            <span>Transferir Pontos</span>
-            <span class="cta-icon-bezel">→</span>
-          </button>
-        </form>
-      </div>
-
-      <!-- Aba Testes de Rejeição do Cliente -->
-      <div class="tab-pane" id="tab-tests">
-        <div class="sandbox-actions">
-          <div class="sandbox-card">
-            <div class="sandbox-desc">
-              <strong>1. Simular Gasto Duplo</strong>
-              <span>Tenta transferir valor acima do saldo disponível da conta.</span>
-            </div>
-            <button class="island-btn island-btn-danger" id="btn-test-doublespend">Executar</button>
-          </div>
-          <div class="sandbox-card">
-            <div class="sandbox-desc">
-              <strong>2. Simular Emissão Não Autorizada</strong>
-              <span>Cliente tenta emitir novos pontos para si mesmo.</span>
-            </div>
-            <button class="island-btn island-btn-danger" id="btn-test-unauthorized">Executar</button>
-          </div>
-          <div class="sandbox-card">
-            <div class="sandbox-desc">
-              <strong>3. Tentar Enviar Pontos para a Loja</strong>
-              <span>Comprova que o contrato rejeita transferências para a Loja Parceira.</span>
-            </div>
-            <button class="island-btn island-btn-danger" id="btn-test-send-merchant">Executar</button>
-          </div>
-        </div>
-      </div>
-    `;
-
-    setupTransferForm();
-    setupCustomerTests();
-    renderVouchers();
+    feedbackBadge.textContent = "FALHOU";
   }
 
-  setupSegmentedTabs();
-}
+  feedbackMsg.textContent = message;
 
-function setupSegmentedTabs() {
-  const tabButtons = segmentedTabsContainer.querySelectorAll('.seg-btn');
-  tabButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      tabButtons.forEach(b => b.classList.remove('active'));
-      tabContentArea.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-      btn.classList.add('active');
-      const targetPane = tabContentArea.querySelector(`#${btn.getAttribute('data-tab')}`);
-      if (targetPane) targetPane.classList.add('active');
-    });
-  });
-}
+  const oldLink = feedbackBox.querySelector(".etherscan-link");
+  if (oldLink) oldLink.remove();
 
-function setupMintForm() {
-  const form = document.getElementById('form-mint');
-  if (!form) return;
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const recipient = document.getElementById('mint-recipient').value;
-    const amount = parseInt(document.getElementById('mint-amount').value, 10);
-
-    try {
-      const res = await fetch('/api/quick-action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          account_key: activeAccount.key,
-          action_type: 'MINT',
-          recipient: recipient,
-          amount: amount
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        showFeedback('error', data.detail || 'Falha ao emitir pontos');
-      } else {
-        showFeedback('success', `Sucesso! Bloco #${data.block.index} criado. ${amount} HBC emitidos.`);
-        await refreshAll();
-      }
-    } catch (err) {
-      showFeedback('error', `Erro: ${err.message}`);
-    }
-  });
-}
-
-function setupTransferForm() {
-  const form = document.getElementById('form-transfer');
-  if (!form) return;
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const recipient = document.getElementById('transfer-recipient').value;
-    const amount = parseInt(document.getElementById('transfer-amount').value, 10);
-
-    try {
-      const res = await fetch('/api/quick-action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          account_key: activeAccount.key,
-          action_type: 'TRANSFER',
-          recipient: recipient,
-          amount: amount
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        showFeedback('error', data.detail || 'Falha na transferência');
-      } else {
-        showFeedback('success', `Transferência realizada! Confirmada no Bloco #${data.block.index}.`);
-        await refreshAll();
-      }
-    } catch (err) {
-      showFeedback('error', `Erro: ${err.message}`);
-    }
-  });
-}
-
-function setupMerchantTest() {
-  const btn = document.getElementById('btn-test-merchant-redeem');
-  if (!btn) return;
-  btn.addEventListener('click', async () => {
-    try {
-      const res = await fetch('/api/quick-action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          account_key: 'merchant',
-          action_type: 'MERCHANT_REDEEM_ATTACK'
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        showFeedback('error', data.detail);
-      } else {
-        showFeedback('success', data.message);
-      }
-    } catch (err) {
-      showFeedback('error', err.message);
-    }
-  });
-}
-
-function setupCustomerTests() {
-  const btnDoubleSpend = document.getElementById('btn-test-doublespend');
-  const btnUnauthorized = document.getElementById('btn-test-unauthorized');
-  const btnSendMerchant = document.getElementById('btn-test-send-merchant');
-
-  if (btnDoubleSpend) {
-    btnDoubleSpend.addEventListener('click', async () => {
-      try {
-        const res = await fetch('/api/quick-action', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            account_key: activeAccount.key,
-            action_type: 'DOUBLE_SPEND_ATTACK'
-          })
-        });
-        const data = await res.json();
-        showFeedback(!res.ok ? 'error' : 'success', !res.ok ? data.detail : data.message);
-      } catch (err) {
-        showFeedback('error', err.message);
-      }
-    });
-  }
-
-  if (btnUnauthorized) {
-    btnUnauthorized.addEventListener('click', async () => {
-      try {
-        const res = await fetch('/api/quick-action', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            account_key: activeAccount.key,
-            action_type: 'UNAUTHORIZED_MINT'
-          })
-        });
-        const data = await res.json();
-        showFeedback(!res.ok ? 'error' : 'success', !res.ok ? data.detail : data.message);
-      } catch (err) {
-        showFeedback('error', err.message);
-      }
-    });
-  }
-
-  if (btnSendMerchant) {
-    btnSendMerchant.addEventListener('click', async () => {
-      try {
-        const res = await fetch('/api/quick-action', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            account_key: activeAccount.key,
-            action_type: 'TRANSFER_TO_MERCHANT_ATTACK'
-          })
-        });
-        const data = await res.json();
-        showFeedback(!res.ok ? 'error' : 'success', !res.ok ? data.detail : data.message);
-      } catch (err) {
-        showFeedback('error', err.message);
-      }
-    });
+  if (txHash) {
+    const link = document.createElement("a");
+    link.className = "etherscan-link";
+    link.href = `https://sepolia.etherscan.io/tx/${txHash}`;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "View on Sepolia Etherscan";
+    feedbackBox.appendChild(link);
   }
 }
 
-// Carregar Recompensas e Vouchers
-async function loadRewardsAndState() {
+function explainError(error) {
+  if (error?.code === 4001) {
+    return "You rejected the transaction in MetaMask.";
+  }
+
+  const message = error?.message || String(error);
+
+  if (message.toLowerCase().includes("insufficient funds")) {
+    return "This wallet needs SepoliaETH for the transaction fee and gas.";
+  }
+
+  if (
+      message.toLowerCase().includes("revert") ||
+      message.toLowerCase().includes("execution reverted")
+  ) {
+    return "The contract rejected this action. Check the wallet role, points balance, reward, or redemption fee.";
+  }
+
+  return message;
+}
+
+async function switchToSepoliaIfNeeded() {
+  const currentChain = await window.ethereum.request({
+    method: "eth_chainId",
+  });
+
+  if (currentChain === SEPOLIA_CHAIN_HEX) return;
+
   try {
-    const res = await fetch('/api/state');
-    const state = await res.json();
-    rewards = state.rewards || [];
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: SEPOLIA_CHAIN_HEX }],
+    });
+  } catch (error) {
+    if (error.code === 4001) {
+      throw new Error("You cancelled the switch to Sepolia.");
+    }
+    throw error;
+  }
+}
+
+async function connectWallet() {
+  if (!window.ethereum) {
+    showFeedback("error", "MetaMask was not found. Install it and reload this page.");
+    return;
+  }
+
+  showFeedback("pending", "Waiting for MetaMask approval…");
+
+  try {
+    const accounts = await window.ethereum.request({
+      method: "eth_requestAccounts",
+    });
+
+    if (!accounts.length) {
+      showFeedback("error", "No wallet account was selected.");
+      return;
+    }
+
+    account = accounts[0];
+    web3 = new Web3(window.ethereum);
+
+    const [chainId, ethWei] = await Promise.all([
+      web3.eth.getChainId(),
+      web3.eth.getBalance(account),
+    ]);
+
+    $("wallet-address").textContent = account;
+    $("wallet-network").textContent = `Chain ID ${chainId}`;
+    $("wallet-eth-balance").textContent =
+        `${web3.utils.fromWei(ethWei, "ether")} ETH`;
+
+    const button = $("btn-connect-wallet");
+    if (button) {
+      button.textContent = shorten(account);
+      button.title = account;
+    }
+
+    showFeedback(
+        "success",
+        "MetaMask connected. The HashBack contract is not configured yet."
+    );
+  } catch (error) {
+    showFeedback("error", explainError(error));
+  }
+}
+
+async function refreshAll() {
+  if (!contract || !account) return;
+
+  try {
+    const [chainId, owner, isMerchant, points, ethWei] = await Promise.all([
+      web3.eth.getChainId(),
+      contract.methods.owner().call(),
+      contract.methods.authorizedMerchants(account).call(),
+      contract.methods.getBalance(account).call(),
+      web3.eth.getBalance(account),
+    ]);
+
+    if (Number(chainId) !== SEPOLIA_CHAIN_ID) {
+      showFeedback("error", "Switch MetaMask to Sepolia to use HashBack.");
+      return;
+    }
+
+    role.isOwner = owner.toLowerCase() === account.toLowerCase();
+    role.isMerchant = Boolean(isMerchant);
+    role.isCustomer = !role.isMerchant;
+
+    if (chainStatusText) chainStatusText.textContent = "Sepolia connected";
+
+    renderAccount();
+    renderProfile(points, ethWei);
+
+    await Promise.all([
+      loadRewards(),
+      loadVouchers(),
+      loadEventHistory(),
+    ]);
+  } catch (error) {
+    showFeedback("error", `Could not read HashBack contract: ${explainError(error)}`);
+  }
+}
+
+function renderAccount() {
+  if (!accountPillsContainer) return;
+
+  accountPillsContainer.replaceChildren();
+
+  const label = document.createElement("span");
+  label.className = "acc-pill active";
+  label.textContent = account;
+  label.title = account;
+  accountPillsContainer.appendChild(label);
+}
+
+function renderProfile(points, ethWei) {
+  if (!activeRoleEl || !metricsContainer) return;
+
+  const labels = [];
+  if (role.isOwner) labels.push("Owner");
+  if (role.isMerchant) labels.push("Authorized store");
+  if (role.isCustomer) labels.push("Customer");
+
+  activeRoleEl.textContent = labels.join(" · ");
+
+  const eth = web3.utils.fromWei(ethWei, "ether");
+
+  metricsContainer.innerHTML = `
+    <div class="metric-plate">
+      <span class="plate-label">HashBack points</span>
+      <div class="plate-balance">
+        <span>${safeText(points.toString())}</span>
+        <span class="token-ticker">HBC</span>
+      </div>
+    </div>
+    <div class="metric-plate">
+      <span class="plate-label">SepoliaETH for gas</span>
+      <div class="plate-balance">
+        <span>${safeText(eth)}</span>
+        <span class="token-ticker">ETH</span>
+      </div>
+    </div>
+    <div class="metric-plate address-plate">
+      <span class="plate-label">Connected wallet</span>
+      <div class="plate-mono">${safeText(account)}</div>
+    </div>
+  `;
+
+  if (cellMerchantSummary) {
+    cellMerchantSummary.style.display =
+        role.isMerchant || role.isOwner ? "block" : "none";
+  }
+
+  if (cellRewards) {
+    cellRewards.style.display = role.isCustomer ? "block" : "none";
+  }
+
+  renderOperations();
+}
+
+function renderOperations() {
+  if (!tabContentArea || !segmentedTabsContainer) return;
+
+  const panels = [];
+
+  if (role.isOwner) {
+    panels.push(`
+      <section class="wallet-action">
+        <h4>Owner: authorize a store</h4>
+        <form id="form-authorize-store" class="haptic-form">
+          <label for="store-address">Store wallet address</label>
+          <input id="store-address" class="haptic-input" required placeholder="0x…">
+          <button class="island-cta" type="submit">Authorize store</button>
+        </form>
+      </section>
+      <section class="wallet-action">
+        <h4>Owner: add a reward</h4>
+        <form id="form-add-reward" class="haptic-form">
+          <label for="reward-id">Reward ID (example: REW-5)</label>
+          <input id="reward-id" class="haptic-input" required>
+          <label for="reward-name">Reward name</label>
+          <input id="reward-name" class="haptic-input" required>
+          <label for="reward-cost">Cost in HBC points</label>
+          <input id="reward-cost" class="haptic-input" type="number" min="1" required>
+          <button class="island-cta" type="submit">Add reward</button>
+        </form>
+      </section>
+    `);
+  }
+
+  if (role.isMerchant) {
+    panels.push(`
+      <section class="wallet-action">
+        <h4>Store: issue points to a customer</h4>
+        <form id="form-issue-points" class="haptic-form">
+          <label for="issue-customer">Customer wallet address</label>
+          <input id="issue-customer" class="haptic-input" required placeholder="0x…">
+          <label for="issue-amount">Points to issue</label>
+          <input id="issue-amount" class="haptic-input" type="number" min="1" required>
+          <button class="island-cta" type="submit">Issue points</button>
+        </form>
+      </section>
+    `);
+  }
+
+  if (role.isCustomer) {
+    panels.push(`
+      <section class="wallet-action">
+        <h4>Customer: transfer points</h4>
+        <form id="form-transfer-points" class="haptic-form">
+          <label for="transfer-recipient">Recipient wallet address</label>
+          <input id="transfer-recipient" class="haptic-input" required placeholder="0x…">
+          <label for="transfer-amount">Points to transfer</label>
+          <input id="transfer-amount" class="haptic-input" type="number" min="1" required>
+          <button class="island-cta" type="submit">Transfer points</button>
+        </form>
+      </section>
+    `);
+  }
+
+  operationsTitle.textContent = "HashBack actions";
+  segmentedTabsContainer.replaceChildren();
+  tabContentArea.innerHTML = panels.join("") || "<p>Connect a wallet to begin.</p>";
+
+  bindForms();
+}
+
+function bindForms() {
+  const authorizeForm = $("form-authorize-store");
+  if (authorizeForm) {
+    authorizeForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await sendContractTransaction(() =>
+          contract.methods.authorizeMerchant($("store-address").value.trim())
+      );
+    });
+  }
+
+  const addRewardForm = $("form-add-reward");
+  if (addRewardForm) {
+    addRewardForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const textId = $("reward-id").value.trim();
+      const rewardId = web3.utils.padRight(
+          web3.utils.asciiToHex(textId),
+          64
+      );
+      const name = $("reward-name").value.trim();
+      const cost = $("reward-cost").value;
+
+      await sendContractTransaction(() =>
+          contract.methods.addReward(rewardId, name, cost)
+      );
+    });
+  }
+
+  const issueForm = $("form-issue-points");
+  if (issueForm) {
+    issueForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const customer = $("issue-customer").value.trim();
+      const amount = $("issue-amount").value;
+
+      if (!web3.utils.isAddress(customer)) {
+        showFeedback("error", "Enter a valid customer wallet address.");
+        return;
+      }
+
+      await sendContractTransaction(() =>
+          contract.methods.issuePoints(customer, amount)
+      );
+    });
+  }
+
+  const transferForm = $("form-transfer-points");
+  if (transferForm) {
+    transferForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const recipient = $("transfer-recipient").value.trim();
+      const amount = $("transfer-amount").value;
+
+      if (!web3.utils.isAddress(recipient)) {
+        showFeedback("error", "Enter a valid recipient wallet address.");
+        return;
+      }
+
+      await sendContractTransaction(() =>
+          contract.methods.transferPoints(recipient, amount)
+      );
+    });
+  }
+}
+
+async function sendContractTransaction(makeMethod, value = undefined) {
+  try {
+    const method = makeMethod();
+    const options = { from: account };
+
+    if (value !== undefined) options.value = value;
+
+    const pending = method.send(options);
+
+    pending.on("transactionHash", (hash) => {
+      showFeedback("pending", "Transaction submitted; waiting for confirmation.", hash);
+    });
+
+    const receipt = await pending;
+    showFeedback(
+        "success",
+        `Transaction confirmed in block ${receipt.blockNumber}.`,
+        receipt.transactionHash
+    );
+
+    await refreshAll();
+  } catch (error) {
+    showFeedback("error", explainError(error));
+  }
+}
+
+async function loadRewards() {
+  if (!rewardsContainer) return;
+
+  try {
+    const count = Number(await contract.methods.getRewardCount().call());
+    rewards = [];
+
+    for (let i = 0; i < count; i++) {
+      const id = await contract.methods.getRewardIdAt(i).call();
+      const result = await contract.methods.getReward(id).call();
+
+      const reward = {
+        id: result.rewardId ?? result[0],
+        name: result.name ?? result[1],
+        cost: result.cost ?? result[2],
+        active: result.active ?? result[3],
+      };
+
+      if (reward.active) rewards.push(reward);
+    }
+
     renderRewards();
-    renderVouchers(state.vouchers || []);
-  } catch (err) {
-    console.error('Erro ao carregar recompensas:', err);
+  } catch (error) {
+    console.error("Could not load rewards:", error);
   }
 }
 
 function renderRewards() {
-  rewardsContainer.innerHTML = '';
-  rewards.forEach(r => {
-    const card = document.createElement('div');
-    card.className = 'vault-card';
-    card.innerHTML = `
-      <div class="vault-info">
-        <h4>${r.name}</h4>
-        <p>${r.description}</p>
-      </div>
-      <div class="vault-right">
-        <div class="vault-cost">${r.points} <small>pts</small></div>
-        <button class="island-btn" onclick="redeemReward('${r.id}')">
-          <span>Resgatar</span>
-          <span class="btn-icon-wrapper">→</span>
-        </button>
-      </div>
-    `;
-    rewardsContainer.appendChild(card);
-  });
-}
+  if (!rewardsContainer) return;
 
-async function renderVouchers(vouchersList = null) {
-  if (!vouchersList) {
-    const res = await fetch('/api/state');
-    const state = await res.json();
-    vouchersList = state.vouchers || [];
-  }
+  rewardsContainer.replaceChildren();
 
-  vouchersContainer.innerHTML = '';
-  const myVouchers = activeAccount ? vouchersList.filter(v => v.customer.toLowerCase() === activeAccount.address.toLowerCase()) : vouchersList;
-
-  if (myVouchers.length === 0) {
-    vouchersContainer.innerHTML = '<p class="empty-plate">Nenhum voucher resgatado por esta conta.</p>';
+  if (!rewards.length) {
+    rewardsContainer.innerHTML =
+        '<p class="empty-plate">No active rewards in the catalog.</p>';
     return;
   }
 
-  myVouchers.forEach(v => {
-    const plate = document.createElement('div');
-    plate.className = 'voucher-plate';
-    plate.innerHTML = `
-      <div>
-        <div class="voucher-hash">${v.voucher_code}</div>
-        <div class="voucher-sub">${v.reward_name} • ${v.points_spent} HBC Queimados</div>
-      </div>
-      <span class="bezel-pill" style="font-size:0.7rem; color:var(--accent-purple-light); border-color:rgba(139,92,246,0.3)">Válido no Contrato</span>
-    `;
-    vouchersContainer.appendChild(plate);
-  });
+  for (const reward of rewards) {
+    const card = document.createElement("div");
+    card.className = "vault-card";
+
+    const info = document.createElement("div");
+    info.className = "vault-info";
+
+    const name = document.createElement("h4");
+    name.textContent = reward.name;
+
+    const cost = document.createElement("p");
+    cost.textContent = `${reward.cost.toString()} HBC`;
+
+    const button = document.createElement("button");
+    button.className = "island-btn";
+    button.type = "button";
+    button.textContent = "Redeem";
+    button.addEventListener("click", () => redeemReward(reward.id));
+
+    info.append(name, cost);
+    card.append(info, button);
+    rewardsContainer.appendChild(card);
+  }
 }
 
-// Resgate de Recompensas
-window.redeemReward = async function(rewardId) {
-  if (!activeAccount || activeAccount.is_merchant) return;
+async function redeemReward(rewardId) {
+  try {
+    const fee = await contract.methods.REDEMPTION_FEE().call();
+    await sendContractTransaction(
+        () => contract.methods.redeem(rewardId),
+        fee
+    );
+  } catch (error) {
+    showFeedback("error", explainError(error));
+  }
+}
+
+async function loadVouchers() {
+  if (!vouchersContainer || !role.isCustomer) return;
 
   try {
-    const res = await fetch('/api/quick-action', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        account_key: activeAccount.key,
-        action_type: 'REDEEM',
-        reward_id: rewardId
-      })
+    const ids = await contract.methods
+        .getRedemptionPage(account, 0, 50)
+        .call();
+
+    vouchersContainer.replaceChildren();
+
+    if (!ids.length) {
+      vouchersContainer.innerHTML =
+          '<p class="empty-plate">No redemptions for this wallet yet.</p>';
+      return;
+    }
+
+    for (const id of ids) {
+      const result = await contract.methods.getRedemption(id).call();
+      const redemption = {
+        rewardId: result.rewardId ?? result[1],
+        pointsSpent: result.pointsSpent ?? result[2],
+        createdAt: result.createdAt ?? result[3],
+        status: Number(result.status ?? result[4]),
+      };
+
+      const reward = rewards.find((item) => item.id === redemption.rewardId);
+      const item = document.createElement("div");
+      item.className = "voucher-plate";
+
+      const description = document.createElement("div");
+      description.textContent =
+          `${reward?.name || "HashBack reward"} · ` +
+          `${redemption.pointsSpent.toString()} HBC · ` +
+          `${["Issued", "Fulfilled", "Cancelled"][redemption.status] || "Unknown"}`;
+
+      item.appendChild(description);
+      vouchersContainer.appendChild(item);
+    }
+  } catch (error) {
+    console.error("Could not load vouchers:", error);
+  }
+}
+
+async function loadEventHistory() {
+  if (!timelineContainer) return;
+
+  try {
+    const currentBlock = Number(await web3.eth.getBlockNumber());
+    const deploymentBlock = Number(config.deploymentBlock || 0);
+    const fromBlock =
+        deploymentBlock > 0
+            ? deploymentBlock
+            : Math.max(0, currentBlock - 5000);
+
+    const events = await contract.getPastEvents("allEvents", {
+      fromBlock,
+      toBlock: "latest",
     });
 
-    const data = await res.json();
-    if (!res.ok) {
-      showFeedback('error', data.detail || 'Resgate rejeitado');
-    } else {
-      showFeedback('success', `Pontos queimados e voucher gerado no Bloco #${data.block.index}.`);
-      await refreshAll();
+    events.sort(
+        (a, b) => Number(b.blockNumber) - Number(a.blockNumber)
+    );
+
+    timelineContainer.replaceChildren();
+
+    if (blocksCountEl) blocksCountEl.textContent = String(events.length);
+
+    if (!events.length) {
+      timelineContainer.innerHTML =
+          '<p class="empty-plate">No recent contract events.</p>';
+      return;
     }
-  } catch (err) {
-    showFeedback('error', `Erro: ${err.message}`);
-  }
-};
 
-// Carregar Blockchain
-async function loadBlockchain() {
-  try {
-    const res = await fetch('/api/chain');
-    const data = await res.json();
-    chainData = data.chain || [];
-    blocksCountEl.textContent = chainData.length;
-    renderBlockchain();
-  } catch (err) {
-    console.error('Erro ao buscar blockchain:', err);
+    for (const event of events.slice(0, 30)) {
+      const card = document.createElement("div");
+      card.className = "stream-card";
+
+      const title = document.createElement("strong");
+      title.textContent = event.event || "HashBack event";
+
+      const tx = document.createElement("a");
+      tx.href = `https://sepolia.etherscan.io/tx/${event.transactionHash}`;
+      tx.target = "_blank";
+      tx.rel = "noopener noreferrer";
+      tx.textContent = shorten(event.transactionHash);
+
+      const block = document.createElement("span");
+      block.textContent = `Block ${event.blockNumber}`;
+
+      card.append(title, document.createTextNode(" · "), tx,
+          document.createTextNode(" · "), block);
+      timelineContainer.appendChild(card);
+    }
+  } catch (error) {
+    console.error("Could not load contract events:", error);
   }
 }
 
-function renderBlockchain() {
-  timelineContainer.innerHTML = '';
-  chainData.forEach(block => {
-    const card = document.createElement('div');
-    card.className = 'stream-card';
+const connectButton = $("btn-connect-wallet") || $("btn-reset-chain");
 
-    const txsHtml = block.transactions.length === 0 
-      ? '<div class="plate-mono" style="font-size:0.72rem; color:var(--text-tertiary);">Bloco Gênesis (Sem transações)</div>'
-      : block.transactions.map(tx => `
-          <div class="stream-tx">
-            <div>
-              <span class="badge-tx ${tx.type}">${tx.type}</span>
-              <strong>${tx.amount} HBC</strong>
-            </div>
-            <div class="plate-mono" style="margin-top:3px;">De: ${tx.sender.substring(0, 10)}...</div>
-            <div class="plate-mono">Para: ${tx.recipient.substring(0, 10)}...</div>
-          </div>
-        `).join('');
-
-    const formattedTime = new Date(block.timestamp * 1000).toLocaleTimeString('pt-BR');
-
-    card.innerHTML = `
-      <div class="stream-header">
-        <span class="stream-index">Bloco #${block.index}</span>
-        <span class="stream-time">${formattedTime}</span>
-      </div>
-      <div class="hash-row">
-        <span class="hash-label">Hash Atual</span>
-        <div class="hash-val">${block.current_hash}</div>
-        <span class="hash-label" style="margin-top:2px;">Hash Anterior</span>
-        <div class="hash-val">${block.previous_hash}</div>
-      </div>
-      <div class="stream-tx-list">
-        <span class="hash-label">Transações (${block.transactions.length})</span>
-        ${txsHtml}
-      </div>
-    `;
-    timelineContainer.appendChild(card);
-  });
-
-  timelineContainer.scrollLeft = timelineContainer.scrollWidth;
+if (connectButton) {
+  connectButton.textContent = "Connect MetaMask";
+  connectButton.removeAttribute("title");
+  connectButton.addEventListener("click", connectWallet);
 }
 
-// Resetar Cadeia
-document.getElementById('btn-reset-chain').addEventListener('click', async () => {
-  if (!confirm('Deseja resetar a blockchain para o Bloco Gênesis?')) return;
-  try {
-    const res = await fetch('/api/reset', { method: 'POST' });
-    const data = await res.json();
-    showFeedback('success', data.message);
-    await refreshAll();
-  } catch (err) {
-    showFeedback('error', `Erro: ${err.message}`);
-  }
-});
-
-async function refreshAll() {
-  const currentKey = activeAccount ? activeAccount.key : null;
-  const res = await fetch('/api/demo-accounts');
-  accounts = await res.json();
-  if (currentKey) {
-    activeAccount = accounts.find(a => a.key === currentKey) || accounts[0];
-  }
-  renderAccountPills();
-  await loadRewardsAndState();
-  await loadBlockchain();
+if (window.ethereum) {
+  window.ethereum.on("accountsChanged", () => window.location.reload());
+  window.ethereum.on("chainChanged", () => window.location.reload());
 }
-
-// Inicialização
-refreshAll();

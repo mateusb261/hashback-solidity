@@ -1,0 +1,1 @@
+MetaMask integration target: frontend/contract.js, frontend/index.html, frontend/app.js, backend/contract.sol, README.md.
