@@ -115,49 +115,73 @@ async function switchToSepoliaIfNeeded() {
 }
 
 async function connectWallet() {
-  if (!window.ethereum) {
-    showFeedback("error", "MetaMask was not found. Install it and reload this page.");
-    return;
-  }
-
-  showFeedback("pending", "Waiting for MetaMask approval…");
-
-  try {
-    const accounts = await window.ethereum.request({
-      method: "eth_requestAccounts",
-    });
-
-    if (!accounts.length) {
-      showFeedback("error", "No wallet account was selected.");
-      return;
+    if (!window.ethereum) {
+        showFeedback("error", "MetaMask was not found. Install it and reload this page.");
+        return;
     }
 
-    account = accounts[0];
-    web3 = new Web3(window.ethereum);
+    showFeedback("pending", "Waiting for MetaMask approval…");
 
-    const [chainId, ethWei] = await Promise.all([
-      web3.eth.getChainId(),
-      web3.eth.getBalance(account),
-    ]);
+    try {
+        const accounts = await window.ethereum.request({
+            method: "eth_requestAccounts",
+        });
 
-    $("wallet-address").textContent = account;
-    $("wallet-network").textContent = `Chain ID ${chainId}`;
-    $("wallet-eth-balance").textContent =
-        `${web3.utils.fromWei(ethWei, "ether")} ETH`;
+        if (!accounts.length) {
+            showFeedback("error", "No wallet account was selected.");
+            return;
+        }
 
-    const button = $("btn-connect-wallet");
-    if (button) {
-      button.textContent = shorten(account);
-      button.title = account;
+        account = accounts[0];
+        web3 = new Web3(window.ethereum);
+
+        const chainId = Number(await web3.eth.getChainId());
+
+        if (chainId !== SEPOLIA_CHAIN_ID) {
+            showFeedback("error", "Switch MetaMask to Sepolia, then connect again.");
+            return;
+        }
+
+        if (
+            !config ||
+            !web3.utils.isAddress(config.contractAddress) ||
+            !Array.isArray(config.abi) ||
+            config.abi.length === 0
+        ) {
+            throw new Error("The HashBack address or ABI is missing from contract.js.");
+        }
+
+        const deployedCode = await web3.eth.getCode(config.contractAddress);
+
+        if (deployedCode === "0x") {
+            throw new Error("No contract was found at this address on Sepolia.");
+        }
+
+        contract = new web3.eth.Contract(config.abi, config.contractAddress);
+
+        // Confirma que o endereço e a ABI permitem ler o contrato.
+        await contract.methods.owner().call();
+
+        const ethWei = await web3.eth.getBalance(account);
+
+        $("wallet-address").textContent = account;
+        $("wallet-network").textContent = `Chain ID ${chainId}`;
+        $("wallet-eth-balance").textContent =
+            `${web3.utils.fromWei(ethWei, "ether")} ETH`;
+
+        const button = $("btn-connect-wallet");
+        if (button) {
+            button.textContent = shorten(account);
+            button.title = account;
+        }
+
+        await refreshAll();
+
+        showFeedback("success", "MetaMask and HashBack contract connected.");
+    } catch (error) {
+        contract = null;
+        showFeedback("error", explainError(error));
     }
-
-    showFeedback(
-        "success",
-        "MetaMask connected. The HashBack contract is not configured yet."
-    );
-  } catch (error) {
-    showFeedback("error", explainError(error));
-  }
 }
 
 async function refreshAll() {
