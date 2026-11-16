@@ -269,6 +269,36 @@ html, body {
   color: #be123c;
 }
 
+.island-btn-switch {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-sans);
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: var(--accent-primary);
+  color: #ffffff;
+  border: 1px solid var(--accent-primary);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+  transition: all var(--duration-fluid) var(--ease-spring);
+}
+
+.island-btn-switch:hover {
+  background: var(--accent-primary-hover);
+  border-color: var(--accent-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+}
+
+.island-btn-switch:active {
+  transform: scale(0.97);
+}
+
 /* Arquitetura Double-Bezel (Light Mode) */
 .double-bezel {
   background: var(--bg-bezel-outer);
