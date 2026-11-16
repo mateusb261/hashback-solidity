@@ -12,6 +12,22 @@
 
 ---
 
+## Integrantes e papéis
+
+| Integrante | Papel | Responsabilidades |
+|---|---|---|
+| Nome1| Desenvolvimento do contrato | Implementação e documentação das regras em Solidity. |
+| Nome2| Desenvolvimento do frontend | Interface em HTML/CSS e apresentação dos dados. |
+| Nome3 | Integração Web3 | Conexão com MetaMask, Sepolia e chamadas ao contrato. |
+
+
+## Endereço do contrato na Sepolia
+
+| Rede | Chain ID | Endereço do contrato | Etherscan |
+|---|---:|---|---|
+| Sepolia | `11155111` | `0xc423cf72710e48e98d4bC9EF0e3cac80DE41e28a` | https://sepolia.etherscan.io/address/0xc423cf72710e48e98d4bC9EF0e3cac80DE41e28a |
+
+
 ## 2. O que fica na Blockchain vs. O que fica fora
 | Dado | Onde fica? | Motivo |
 | :--- | :--- | :--- |
@@ -24,52 +40,15 @@
 
 ---
 
-## 3. Rodando a Aplicação
+## Acesso e execução
 
-O servidor já está ativo em: **`http://localhost:8000`**
+### Aplicação publicada na Vercel
 
-### Passo 1: Apresentar a Blockchain em Execução
-1. Abra `http://localhost:8000` no seu navegador.
-2. Mostre o badge superior: **"Blockchain Ativa & Íntegra"**.
-3. Na seção inferior, aponte para o **Bloco #0 (Bloco Gênesis)** com seu hash SHA-256 e `previous_hash` nulo.
+[HashBack DApp](https://hashback-solidity-frontend-itvi-83s3m3mq5-hashback.vercel.app/)
 
-### Passo 2: Realizar uma Operação Válida (Emissão de Pontos)
-1. Certifique-se de que a conta selecionada no topo é **Loja Parceira (Oficial)**.
-2. Na aba **"Emitir Pontos (Loja)"**:
-   - Destinatário: **Alice**.
-   - Quantidade: **150** pontos.
-   - Clique em **"Emitir Pontos & Criar Bloco"**.
-3. **Resultado:**
-   - O banner verde de sucesso surge.
-   - O **Bloco #1** aparece instantaneamente na linha do tempo com a transação `MINT 150 HBC` assinada.
+### Executar o frontend localmente
 
-### Passo 3: Consultar Registro e Mostrar Alteração de Estado no Contrato
-1. No seletor de contas no topo, clique no perfil **Alice**.
-2. Mostre que o saldo da Alice foi atualizado para **150 HBC** e o Nonce foi preservado.
-3. No **Catálogo de Recompensas** à direita, clique em **"Resgatar"** no item *"Cupom de R$ 20 OFF"* (custa 100 pontos).
-4. **Resultado:**
-   - O saldo da Alice é reduzido para **50 HBC**.
-   - Um novo **Bloco #2** do tipo `REDEEM` é selado na Blockchain.
-   - O voucher imutável (ex: `HASH-REW-1-...`) é gerado no contrato e exibido na lista *"Meus Vouchers Emitidos pelo Contrato"*.
+Na raiz do projeto, execute:
 
-### Passo 4: Demonstrar a Rejeição de Operação Inválida ou Sem Permissão
-1. Ainda na conta da **Alice** (que agora possui apenas 50 pontos):
-   - Vá na aba **"Auditoria & Testes de Rejeição"**.
-   - Clique em **"Simular Gasto Duplo"**:
-     - *Tentativa de gastar mais pontos do que possui.*
-     - **Resultado:** O banner vermelho exibe a rejeição imediata do Contrato: `[GASTO DUPLO BLOQUEADO]: Rejeitada pelo Contrato: Tentativa de gasto duplo ou saldo insuficiente...` e **nenhum bloco adicional é criado**.
-   - Clique em **"Simular Emissão Não Autorizada"**:
-     - *Cliente Alice tentando emitir pontos para si mesma.*
-     - **Resultado:** O contrato rejeita: `[CONTRATO REJEITOU]: Rejeitada pelo Contrato: Apenas lojas parceiras autorizadas podem emitir pontos...`.
-
----
-
-## 4. Como Rodar Novamente se Necessário
 ```bash
 python run.py
-```
-Acesse no navegador: `http://localhost:8000`
-Para rodar a suíte de testes do contrato:
-```bash
-python test_contract.py
-```
