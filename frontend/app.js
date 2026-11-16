@@ -139,6 +139,24 @@ async function connectWallet() {
 
         if (chainId !== SEPOLIA_CHAIN_ID) {
             showFeedback("error", "Switch MetaMask to Sepolia, then connect again.");
+            
+            const btn_sepolia_net = $("btn-switch-sepolia");
+            if (btn_sepolia_net) {
+              btn_sepolia_net.style.display = "inline-block";
+
+              btn_sepolia_net.onclick = async () => {
+                try {
+                  await switchToSepoliaIfNeeded();
+                  btn_sepolia_net.style.display = "none";
+
+                  showFeedback("success", "Successfully switched to Sepolia.");
+                } catch (error) {
+                  showFeedback("error", error.message || "Failed to switch to Sepolia.");
+                } finally {
+                  btn_sepolia_net.disabled = false;
+                }
+              };
+            }
             return;
         }
 
