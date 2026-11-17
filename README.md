@@ -44,7 +44,7 @@
 
 ### Aplicação publicada na Vercel
 
-[HashBack DApp](https://hashback-solidity-frontend-itvi-83s3m3mq5-hashback.vercel.app/)
+[HashBack DApp](https://hashback-solidity-l0sy1w2nx-hashback.vercel.app/)
 
 ### Executar o frontend localmente
 
