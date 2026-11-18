@@ -2,7 +2,14 @@
 
 Aplicação descentralizada (dApp) de programa de fidelidade e cashback na rede **Ethereum Sepolia**, composta por um contrato inteligente em Solidity (`backend/contract.sol`) e um frontend web em HTML, CSS, JavaScript puros e **Web3.js 4.x** conectado à **MetaMask**.
 
-Alunos: Cibele Batista - Marcelo Lira - Mateus Bastos
+## Integrantes e papéis
+
+| Integrante | Papel | Responsabilidades |
+|---|---|---|
+| Cibele Batista | Desenvolvimento do frontend e documentação | Desenvolver a interface e organizar a documentação do projeto. |
+| Marcelo Lira | QA e resolução de bugs | Testar os fluxos da aplicação, identificar problemas e apoiar a correção de bugs. |
+| Mateus Bastos | Desenvolvimento do contrato e integração Web3 | Desenvolver as regras do contrato em Solidity e integrar o frontend com MetaMask, Web3.js e Sepolia. |
+
 
 ---
 
@@ -26,7 +33,7 @@ Alunos: Cibele Batista - Marcelo Lira - Mateus Bastos
 | **Rede** | Ethereum Sepolia Testnet (Chain ID `11155111` / `0xaa36a7`) |
 | **Endereço do contrato** | `0xc423cf72710e48e98d4bC9EF0e3cac80DE41e28a` |
 | **Sepolia Etherscan** | https://sepolia.etherscan.io/address/0xc423cf72710e48e98d4bC9EF0e3cac80DE41e28a |
-| **Aplicação na Vercel** | [HashBack DApp](https://hashback-solidity-l0sy1w2nx-hashback.vercel.app/) |
+| **Aplicação na Vercel** | [HashBack DApp](https://hashback-solidity-ncngvstsd-hashback.vercel.app/) |
 | **Vídeo de demonstração** | [Assistir no Google Drive](https://drive.google.com/file/d/1sMbV9ogKzpv7fEfPa0y5bSrUCvlkl2ul/view?usp=sharing) |
 
 ---
@@ -126,3 +133,15 @@ Depois, abra no navegador o endereço local exibido no terminal.
   - Reembolso automático de pontos em cancelamentos de resgate.
   - Catálogo segmentado por lojista parceiro.
   - Indexação off-chain (ex.: *The Graph*) para consultas históricas em escala.
+
+---
+
+## 9. Declaração de Uso de Ferramentas de IA
+
+O **ChatGPT (OpenAI)** foi utilizado como ferramenta de apoio durante o desenvolvimento do HashBack DApp para:
+
+- esclarecer conceitos relacionados a Solidity, Web3.js, MetaMask e à rede Sepolia;
+- analisar trechos do contrato inteligente e do frontend, ajudando a interpretar erros e o fluxo de interação com a carteira;
+- apoiar a organização e a revisão da documentação deste README.
+
+As sugestões da ferramenta foram avaliadas pela equipe, que permanece responsável pelas decisões de implementação e pelo conteúdo final do projeto.
